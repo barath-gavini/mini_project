@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+
 import {
   Dialog,
   DialogContent,
@@ -80,6 +82,8 @@ const LUNCH_BREAK = { start: "13:00", end: "14:00" };
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 export default function TimetableView() {
+  const { user } = useAuth();
+  const [userRole, setUserRole] = useState<string | null>(null);
   const [entries, setEntries] = useState<TimetableEntry[]>([]);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [sections, setSections] = useState<Section[]>([]);
@@ -91,6 +95,8 @@ export default function TimetableView() {
   const [selectedDay, setSelectedDay] = useState<number | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [selectedSectionFilter, setSelectedSectionFilter] = useState<string>("all");
+
+
 
   const fetchData = async () => {
     const [entriesRes, slotsRes, sectionsRes, classroomsRes, facultyRes, coursesRes] = await Promise.all([
@@ -137,6 +143,23 @@ export default function TimetableView() {
     };
   }, []);
 
+  useEffect(() => {
+    const fetchRole = async () => {
+      if (!user) return;
+
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id)
+        .single();
+
+      setUserRole(data?.role || null);
+    };
+
+    fetchRole();
+  }, [user]);
+
+
   // Helper function to get slot number from slot ID
   const getSlotNumber = (slotId: string): number => {
     const slot = timeSlots.find(s => s.id === slotId);
@@ -173,6 +196,11 @@ export default function TimetableView() {
 
   const handleAddEntry = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (userRole !== "admin") {
+      toast.error("You are not authorized to modify the timetable.");
+      return;
+    }
+
     const formData = new FormData(e.currentTarget);
 
     const sectionId = formData.get("section_id") as string;
@@ -392,12 +420,15 @@ export default function TimetableView() {
                             : "hover:bg-muted/50 cursor-pointer border-dashed"
                         )}
                         onClick={() => {
+                          if (userRole !== "admin") return;
+
                           if (!hasEntries || selectedSectionFilter !== "all") {
                             setSelectedDay(dayIndex);
                             setSelectedSlot(slot.id);
                             setDialogOpen(true);
                           }
                         }}
+
                       >
                         {hasEntries ? (
                           <div className="h-full flex flex-col gap-1">
@@ -419,10 +450,13 @@ export default function TimetableView() {
                             )}
                           </div>
                         ) : (
-                          <div className="h-full flex items-center justify-center text-muted-foreground/50">
-                            <Plus className="w-4 h-4" />
-                          </div>
-                        )}
+                          userRole === "admin" ? (
+                            <div className="h-full flex items-center justify-center text-muted-foreground/50">
+                              <Plus className="w-4 h-4" />
+                            </div>
+                          ) : null
+                        )
+                        }
                       </div>
                     );
                   })}
