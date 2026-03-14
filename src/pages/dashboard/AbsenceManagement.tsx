@@ -127,10 +127,10 @@ export default function AbsenceManagement() {
 
     // Filter out faculty who are busy during affected time slots
     const busyFacultyIds = new Set<string>();
-    
+
     if (classes && classes.length > 0) {
       const timeSlotIds = classes.map((c) => c.time_slot?.start_time).filter(Boolean);
-      
+
       const { data: busyEntries } = await supabase
         .from("timetable_entries")
         .select("faculty_id, time_slot:time_slots(start_time)")
@@ -158,7 +158,7 @@ export default function AbsenceManagement() {
     setProcessing(true);
 
     try {
-      // Create reallocation log entries
+      // 1️⃣ Insert reallocation logs
       for (const entry of affectedClasses) {
         await supabase.from("reallocation_logs").insert({
           original_entry_id: entry.id,
@@ -169,7 +169,15 @@ export default function AbsenceManagement() {
         });
       }
 
-      // Mark absence as processed
+      // 2️⃣ Update timetable entries
+      for (const entry of affectedClasses) {
+        await supabase
+          .from("timetable_entries")
+          .update({ faculty_id: selectedSubstitute })
+          .eq("id", entry.id);
+      }
+
+      // 3️⃣ Mark absence as processed
       await supabase
         .from("faculty_absences")
         .update({
@@ -178,10 +186,27 @@ export default function AbsenceManagement() {
         })
         .eq("id", selectedAbsence.id);
 
+      await supabase.from("notifications" as any).insert([
+        {
+          user_id: selectedAbsence.faculty_id,
+          message: "Your class has been reassigned due to your absence.",
+          start_date: selectedAbsence.absence_date,
+          end_date: selectedAbsence.absence_date
+        },
+        {
+          user_id: selectedSubstitute,
+          message: "You have been assigned as substitute faculty.",
+          start_date: selectedAbsence.absence_date,
+          end_date: selectedAbsence.absence_date
+        }
+      ]);
+
       toast.success("Absence processed and substitute assigned");
       setProcessDialogOpen(false);
       fetchAbsences();
+
     } catch (error) {
+      console.error(error);
       toast.error("Failed to process absence");
     }
 
